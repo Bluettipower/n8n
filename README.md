@@ -92,3 +92,26 @@ Proprietary licenses are available for enterprise customers. [Get in touch](mail
 
 Additional information about the license model can be found in the
 [docs](https://docs.n8n.io/reference/license/).
+
+---
+
+
+## Docker 本地开发
+
+**创建自定义镜像**
+
+```
+cd docker/compose/images/n8n
+docker build --build-arg N8N_VERSION=0.233.0 -t n8n_bluetti:v0.1 .
+```
+
+**创建自定义网桥**
+```
+docker network create n8n_bridge
+```
+
+利用 docker-compose 运行，文件内的 docker-compose.yaml 做过修改
+```
+cd docker/compose/withPostgres
+docker-compose up -d
+```
