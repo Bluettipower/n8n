@@ -16,7 +16,7 @@ export async function loginCurrentUser(
 
 export async function login(
 	context: IRestApiContext,
-	params: { email: string; password: string },
+	params: { email: string; password: string; mfaToken?: string; mfaRecoveryToken?: string },
 ): Promise<CurrentUserResponse> {
 	return makeRestApiRequest(context, 'POST', '/login', params);
 }
@@ -28,7 +28,7 @@ export async function logout(context: IRestApiContext): Promise<void> {
 export async function setupOwner(
 	context: IRestApiContext,
 	params: { firstName: string; lastName: string; email: string; password: string },
-): Promise<IUserResponse> {
+): Promise<CurrentUserResponse> {
 	return makeRestApiRequest(context, 'POST', '/owner/setup', params as unknown as IDataObject);
 }
 
@@ -67,14 +67,14 @@ export async function sendForgotPasswordEmail(
 
 export async function validatePasswordToken(
 	context: IRestApiContext,
-	params: { token: string; userId: string },
+	params: { token: string },
 ): Promise<void> {
 	await makeRestApiRequest(context, 'GET', '/resolve-password-token', params);
 }
 
 export async function changePassword(
 	context: IRestApiContext,
-	params: { token: string; password: string; userId: string },
+	params: { token: string; password: string; mfaToken?: string },
 ): Promise<void> {
 	await makeRestApiRequest(context, 'POST', '/change-password', params);
 }

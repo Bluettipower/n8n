@@ -136,60 +136,6 @@ describe('PUT /workflows/:id', () => {
 	});
 });
 
-describe('GET /workflows', () => {
-	test('should return workflows without nodes, sharing and credential usage details', async () => {
-		const tag = await testDb.createTag({ name: 'test' });
-
-		const savedCredential = await saveCredential(randomCredentialPayload(), { user: owner });
-
-		const workflow = await createWorkflow(
-			{
-				nodes: [
-					{
-						id: uuid(),
-						name: 'Action Network',
-						type: 'n8n-nodes-base.actionNetwork',
-						parameters: {},
-						typeVersion: 1,
-						position: [0, 0],
-						credentials: {
-							actionNetworkApi: {
-								id: savedCredential.id,
-								name: savedCredential.name,
-							},
-						},
-					},
-				],
-				tags: [tag],
-			},
-			owner,
-		);
-
-		await testDb.shareWorkflowWithUsers(workflow, [member]);
-
-		const response = await authOwnerAgent.get('/workflows');
-
-		const [fetchedWorkflow] = response.body.data;
-
-		expect(response.statusCode).toBe(200);
-		expect(fetchedWorkflow.ownedBy).toMatchObject({
-			id: owner.id,
-		});
-
-		expect(fetchedWorkflow.sharedWith).not.toBeDefined();
-		expect(fetchedWorkflow.usedCredentials).not.toBeDefined();
-		expect(fetchedWorkflow.nodes).not.toBeDefined();
-		expect(fetchedWorkflow.tags).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					id: expect.any(String),
-					name: expect.any(String),
-				}),
-			]),
-		);
-	});
-});
-
 describe('GET /workflows/new', () => {
 	[true, false].forEach((sharingEnabled) => {
 		test(`should return an auto-incremented name, even when sharing is ${
@@ -759,13 +705,12 @@ describe('PATCH /workflows/:id - validate interim updates', () => {
 		const { versionId: memberVersionId } = memberGetResponse.body.data;
 		await authMemberAgent
 			.patch(`/workflows/${id}`)
-			.send({ active: true, versionId: memberVersionId });
-
+			.send({ active: true, versionId: memberVersionId, name: 'Update by member' });
 		// owner blocked from activating workflow
 
 		const activationAttemptResponse = await authOwnerAgent
 			.patch(`/workflows/${id}`)
-			.send({ active: true, versionId: ownerVersionId });
+			.send({ active: true, versionId: ownerVersionId, name: 'Update by owner' });
 
 		expect(activationAttemptResponse.status).toBe(400);
 		expect(activationAttemptResponse.body.code).toBe(100);
@@ -793,13 +738,13 @@ describe('PATCH /workflows/:id - validate interim updates', () => {
 
 		await authOwnerAgent
 			.patch(`/workflows/${id}`)
-			.send({ active: true, versionId: ownerSecondVersionId });
+			.send({ active: true, versionId: ownerSecondVersionId, name: 'Owner update again' });
 
 		// member blocked from activating workflow
 
 		const updateAttemptResponse = await authMemberAgent
 			.patch(`/workflows/${id}`)
-			.send({ active: true, versionId: memberVersionId });
+			.send({ active: true, versionId: memberVersionId, name: 'Update by member' });
 
 		expect(updateAttemptResponse.status).toBe(400);
 		expect(updateAttemptResponse.body.code).toBe(100);

@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/naming-convention */
 import { readFileSync } from 'fs';
 import { resolve, join, dirname } from 'path';
 import type { n8n } from 'n8n-core';
@@ -26,7 +23,7 @@ export function getN8nPackageJson() {
 	return jsonParse<n8n.PackageJson>(readFileSync(join(CLI_DIR, 'package.json'), 'utf8'));
 }
 
-export const START_NODES = ['n8n-nodes-base.start', 'n8n-nodes-base.manualTrigger'];
+export const STARTING_NODES = ['n8n-nodes-base.start', 'n8n-nodes-base.manualTrigger'];
 
 export const N8N_VERSION = getN8nPackageJson().version;
 
@@ -48,6 +45,8 @@ export const RESPONSE_ERROR_MESSAGES = {
 	PACKAGE_LOADING_FAILED: 'The specified package could not be loaded',
 	DISK_IS_FULL: 'There appears to be insufficient disk space',
 	USERS_QUOTA_REACHED: 'Maximum number of users reached',
+	OAUTH2_CREDENTIAL_TEST_SUCCEEDED: 'Connection Successful!',
+	OAUTH2_CREDENTIAL_TEST_FAILED: 'This OAuth2 credential was not connected to an account.',
 };
 
 export const AUTH_COOKIE_NAME = 'n8n-auth';
@@ -78,6 +77,9 @@ export const LICENSE_FEATURES = {
 	VARIABLES: 'feat:variables',
 	SOURCE_CONTROL: 'feat:sourceControl',
 	API_DISABLED: 'feat:apiDisabled',
+	SHOW_NON_PROD_BANNER: 'feat:showNonProdBanner',
+	WORKFLOW_HISTORY: 'feat:workflowHistory',
+	DEBUG_IN_EDITOR: 'feat:debugInEditor',
 } as const;
 
 export const LICENSE_QUOTAS = {

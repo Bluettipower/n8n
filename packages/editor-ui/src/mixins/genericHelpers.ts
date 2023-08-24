@@ -13,7 +13,6 @@ export const genericHelpers = defineComponent({
 	},
 	data() {
 		return {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			loadingService: null as any | null,
 		};
 	},
@@ -80,6 +79,17 @@ export const genericHelpers = defineComponent({
 				this.loadingService.close();
 				this.loadingService = null;
 			}
+		},
+		isRedirectSafe() {
+			const redirect = this.getRedirectQueryParameter();
+			return redirect.startsWith('/');
+		},
+		getRedirectQueryParameter() {
+			let redirect = '';
+			if (typeof this.$route.query.redirect === 'string') {
+				redirect = decodeURIComponent(this.$route.query.redirect);
+			}
+			return redirect;
 		},
 	},
 });

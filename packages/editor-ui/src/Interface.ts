@@ -1,5 +1,5 @@
 import type { CREDENTIAL_EDIT_MODAL_KEY } from './constants';
-/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import type { IMenuItem } from 'n8n-design-system';
 import type {
 	GenericValue,
@@ -30,11 +30,11 @@ import type {
 	FeatureFlags,
 	ExecutionStatus,
 	ITelemetryTrackProperties,
-	IN8nUISettings,
 	IUserManagementSettings,
 	WorkflowSettings,
 	IUserSettings,
-	Banners,
+	IN8nUISettings,
+	BannerName,
 } from 'n8n-workflow';
 import type { SignInType } from './constants';
 import type {
@@ -62,6 +62,10 @@ declare global {
 						isIdentifiedID?: boolean;
 						featureFlags: FeatureFlags;
 					};
+					session_recording?: {
+						maskAllInputs?: boolean;
+						maskInputFn?: ((text: string, element?: HTMLElement) => string) | null;
+					};
 				},
 			): void;
 			isFeatureEnabled?(flagName: string): boolean;
@@ -74,6 +78,12 @@ declare global {
 			reset?(resetDeviceId?: boolean): void;
 			onFeatureFlags?(callback: (keys: string[], map: FeatureFlags) => void): void;
 			reloadFeatureFlags?(): void;
+			capture?(event: string, properties: IDataObject): void;
+			register?(metadata: IDataObject): void;
+			people?: {
+				set?(metadata: IDataObject): void;
+			};
+			debug?(): void;
 		};
 		analytics?: {
 			track(event: string, proeprties?: ITelemetryTrackProperties): void;
@@ -573,9 +583,12 @@ export interface CurrentUserResponse extends IUserResponse {
 export interface IUser extends IUserResponse {
 	isDefaultUser: boolean;
 	isPendingUser: boolean;
+	hasRecoveryCodesLeft: boolean;
 	isOwner: boolean;
 	inviteAcceptUrl?: string;
 	fullName?: string;
+	createdAt?: string;
+	mfaEnabled: boolean;
 }
 
 export interface IVersionNotificationSettings {
@@ -1070,7 +1083,7 @@ export interface UIState {
 	addFirstStepOnLoad: boolean;
 	executionSidebarAutoRefresh: boolean;
 	bannersHeight: number;
-	banners: { [key in Banners]: { dismissed: boolean; type?: 'temporary' | 'permanent' } };
+	banners: { [key in BannerName]: { dismissed: boolean; type?: 'temporary' | 'permanent' } };
 }
 
 export type IFakeDoor = {
@@ -1131,6 +1144,9 @@ export interface ISettingsState {
 	saml: {
 		loginLabel: string;
 		loginEnabled: boolean;
+	};
+	mfa: {
+		enabled: boolean;
 	};
 	onboardingCallPromptEnabled: boolean;
 	saveDataErrorExecution: string;
@@ -1447,8 +1463,6 @@ export type SamlPreferencesExtractedData = {
 export type SourceControlPreferences = {
 	connected: boolean;
 	repositoryUrl: string;
-	authorName: string;
-	authorEmail: string;
 	branchName: string;
 	branches: string[];
 	branchReadOnly: boolean;
@@ -1546,9 +1560,7 @@ export type UTMCampaign =
 	| 'upgrade-custom-data-filter'
 	| 'upgrade-canvas-nav'
 	| 'upgrade-workflow-sharing'
-	| 'upgrade-canvas-nav'
 	| 'upgrade-credentials-sharing'
-	| 'upgrade-workflow-sharing'
 	| 'upgrade-api'
 	| 'upgrade-audit-logs'
 	| 'upgrade-ldap'

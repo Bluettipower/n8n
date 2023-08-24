@@ -15,10 +15,6 @@
 			<AboutModal />
 		</ModalRoot>
 
-		<ModalRoot :name="ASK_AI_MODAL_KEY">
-			<AskAiModal />
-		</ModalRoot>
-
 		<ModalRoot :name="CREDENTIAL_SELECT_MODAL_KEY">
 			<CredentialsSelectModal />
 		</ModalRoot>
@@ -65,12 +61,12 @@
 			</template>
 		</ModalRoot>
 
-		<ModalRoot :name="EXECUTIONS_MODAL_KEY">
-			<ExecutionsModal />
-		</ModalRoot>
-
 		<ModalRoot :name="WORKFLOW_ACTIVE_MODAL_KEY">
 			<ActivationModal />
+		</ModalRoot>
+
+		<ModalRoot :name="MFA_SETUP_MODAL_KEY">
+			<MfaSetupModal />
 		</ModalRoot>
 
 		<ModalRoot :name="WORKFLOW_SHARE_MODAL_KEY">
@@ -138,7 +134,6 @@ import {
 	CREDENTIAL_SELECT_MODAL_KEY,
 	DELETE_USER_MODAL_KEY,
 	DUPLICATE_MODAL_KEY,
-	EXECUTIONS_MODAL_KEY,
 	INVITE_USER_MODAL_KEY,
 	ONBOARDING_CALL_SIGNUP_MODAL_KEY,
 	PERSONALIZATION_MODAL_KEY,
@@ -150,13 +145,12 @@ import {
 	WORKFLOW_SHARE_MODAL_KEY,
 	IMPORT_CURL_MODAL_KEY,
 	LOG_STREAM_MODAL_KEY,
-	ASK_AI_MODAL_KEY,
 	SOURCE_CONTROL_PUSH_MODAL_KEY,
 	SOURCE_CONTROL_PULL_MODAL_KEY,
+	MFA_SETUP_MODAL_KEY,
 } from '@/constants';
 
 import AboutModal from './AboutModal.vue';
-import AskAiModal from './AskAiModal.vue';
 import CommunityPackageManageConfirmModal from './CommunityPackageManageConfirmModal.vue';
 import CommunityPackageInstallModal from './CommunityPackageInstallModal.vue';
 import ChangePasswordModal from './ChangePasswordModal.vue';
@@ -173,9 +167,9 @@ import UpdatesPanel from './UpdatesPanel.vue';
 import ValueSurvey from './ValueSurvey.vue';
 import WorkflowSettings from './WorkflowSettings.vue';
 import DeleteUserModal from './DeleteUserModal.vue';
-import ExecutionsModal from './ExecutionsModal.vue';
 import ActivationModal from './ActivationModal.vue';
 import ImportCurlModal from './ImportCurlModal.vue';
+import MfaSetupModal from './MfaSetupModal.vue';
 import WorkflowShareModal from './WorkflowShareModal.ee.vue';
 import EventDestinationSettingsModal from '@/components/SettingsLogStreaming/EventDestinationSettingsModal.ee.vue';
 import SourceControlPushModal from '@/components/SourceControlPushModal.ee.vue';
@@ -185,7 +179,6 @@ export default defineComponent({
 	name: 'Modals',
 	components: {
 		AboutModal,
-		AskAiModal,
 		ActivationModal,
 		CommunityPackageInstallModal,
 		CommunityPackageManageConfirmModal,
@@ -196,7 +189,6 @@ export default defineComponent({
 		DeleteUserModal,
 		DuplicateWorkflowDialog,
 		InviteUsersModal,
-		ExecutionsModal,
 		ModalRoot,
 		OnboardingCallSignupModal,
 		PersonalizationModal,
@@ -209,6 +201,7 @@ export default defineComponent({
 		EventDestinationSettingsModal,
 		SourceControlPushModal,
 		SourceControlPullModal,
+		MfaSetupModal,
 	},
 	data: () => ({
 		COMMUNITY_PACKAGE_CONFIRM_MODAL_KEY,
@@ -217,7 +210,6 @@ export default defineComponent({
 		CREDENTIAL_EDIT_MODAL_KEY,
 		CREDENTIAL_SELECT_MODAL_KEY,
 		ABOUT_MODAL_KEY,
-		ASK_AI_MODAL_KEY,
 		CHANGE_PASSWORD_MODAL_KEY,
 		DELETE_USER_MODAL_KEY,
 		DUPLICATE_MODAL_KEY,
@@ -229,12 +221,12 @@ export default defineComponent({
 		WORKFLOW_SETTINGS_MODAL_KEY,
 		WORKFLOW_SHARE_MODAL_KEY,
 		VALUE_SURVEY_MODAL_KEY,
-		EXECUTIONS_MODAL_KEY,
 		WORKFLOW_ACTIVE_MODAL_KEY,
 		IMPORT_CURL_MODAL_KEY,
 		LOG_STREAM_MODAL_KEY,
 		SOURCE_CONTROL_PUSH_MODAL_KEY,
 		SOURCE_CONTROL_PULL_MODAL_KEY,
+		MFA_SETUP_MODAL_KEY,
 	}),
 });
 </script>

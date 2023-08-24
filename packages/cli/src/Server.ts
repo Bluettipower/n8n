@@ -2,9 +2,6 @@
 /* eslint-disable @typescript-eslint/no-unnecessary-boolean-literal-compare */
 /* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
 /* eslint-disable prefer-const */
-/* eslint-disable @typescript-eslint/no-invalid-void-type */
-/* eslint-disable @typescript-eslint/restrict-template-expressions */
-/* eslint-disable @typescript-eslint/no-var-requires */
 /* eslint-disable @typescript-eslint/no-shadow */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -69,6 +66,7 @@ import {
 	GENERATED_STATIC_DIR,
 	inDevelopment,
 	inE2ETests,
+	LICENSE_FEATURES,
 	N8N_VERSION,
 	RESPONSE_ERROR_MESSAGES,
 	TEMPLATES_DIR,
@@ -90,6 +88,7 @@ import {
 	AuthController,
 	LdapController,
 	MeController,
+	MFAController,
 	NodesController,
 	NodeTypesController,
 	OwnerController,
@@ -97,10 +96,10 @@ import {
 	TagsController,
 	TranslationController,
 	UsersController,
+	WorkflowStatisticsController,
 } from '@/controllers';
 
 import { executionsController } from '@/executions/executions.controller';
-import { workflowStatsController } from '@/api/workflowStats.api';
 import { isApiEnabled, loadPublicApiVersions } from '@/PublicApi';
 import {
 	getInstanceBaseUrl,
@@ -136,7 +135,6 @@ import { isLogStreamingEnabled } from '@/eventbus/MessageEventBus/MessageEventBu
 import { licenseController } from './license/license.controller';
 import { Push, setupPushServer, setupPushHandler } from '@/push';
 import { setupAuthMiddlewares } from './middlewares';
-import { initEvents } from './events';
 import {
 	getLdapLoginLabel,
 	handleLdapInit,
@@ -144,7 +142,6 @@ import {
 	isLdapLoginEnabled,
 } from './Ldap/helpers';
 import { AbstractServer } from './AbstractServer';
-import { configureMetrics } from './metrics';
 import { PostHogClient } from './posthog';
 import { eventBus } from './eventbus';
 import { Container } from 'typedi';
@@ -153,6 +150,7 @@ import { License } from './License';
 import {
 	getStatusUsingPreviousExecutionStatusMethod,
 	isAdvancedExecutionFiltersEnabled,
+	isDebugInEditorLicensed,
 } from './executions/executionHelpers';
 import { getSamlLoginLabel, isSamlLoginEnabled, isSamlLicensed } from './sso/saml/samlHelpers';
 import { SamlController } from './sso/saml/routes/saml.controller.ee';
@@ -170,6 +168,9 @@ import { SourceControlService } from '@/environments/sourceControl/sourceControl
 import { SourceControlController } from '@/environments/sourceControl/sourceControl.controller.ee';
 import { ExecutionRepository } from '@db/repositories';
 import type { ExecutionEntity } from '@db/entities/ExecutionEntity';
+import { TOTPService } from './Mfa/totp.service';
+import { MfaService } from './Mfa/mfa.service';
+import { handleMfaDisable, isMfaFeatureEnabled } from './Mfa/helpers';
 
 const exec = promisify(callbackExec);
 
@@ -195,11 +196,14 @@ export class Server extends AbstractServer {
 	push: Push;
 
 	constructor() {
-		super();
+		super('main');
 
 		this.app.engine('handlebars', expressHandlebars({ defaultLayout: false }));
 		this.app.set('view engine', 'handlebars');
 		this.app.set('views', TEMPLATES_DIR);
+
+		this.testWebhooksEnabled = true;
+		this.webhooksEnabled = !config.getEnv('endpoints.disableProductionWebhooksOnMainProcess');
 
 		const urlBaseWebhook = WebhookHelpers.getWebhookBaseUrl();
 		const telemetrySettings: ITelemetrySettings = {
@@ -310,6 +314,11 @@ export class Server extends AbstractServer {
 				variables: false,
 				sourceControl: false,
 				auditLogs: false,
+				showNonProdBanner: false,
+				debugInEditor: false,
+			},
+			mfa: {
+				enabled: false,
 			},
 			hideUsagePage: config.getEnv('hideUsagePage'),
 			license: {
@@ -320,6 +329,9 @@ export class Server extends AbstractServer {
 			},
 			banners: {
 				dismissed: [],
+			},
+			ai: {
+				enabled: config.getEnv('ai.enabled'),
 			},
 		};
 	}
@@ -339,6 +351,7 @@ export class Server extends AbstractServer {
 		this.push = Container.get(Push);
 
 		await super.start();
+		LoggerProxy.debug(`Server ID: ${this.uniqueInstanceId}`);
 
 		const cpus = os.cpus();
 		const binaryDataConfig = config.getEnv('binaryDataManager');
@@ -383,9 +396,6 @@ export class Server extends AbstractServer {
 			saml_enabled: isSamlCurrentAuthenticationMethod(),
 		};
 
-		// Set up event handling
-		initEvents();
-
 		if (inDevelopment && process.env.N8N_DEV_RELOAD === 'true') {
 			const { reloadNodesAndCredentials } = await import('@/ReloadNodesAndCredentials');
 			await reloadNodesAndCredentials(this.loadNodesAndCredentials, this.nodeTypes, this.push);
@@ -404,6 +414,15 @@ export class Server extends AbstractServer {
 	 * Returns the current settings for the frontend
 	 */
 	getSettingsForFrontend(): IN8nUISettings {
+		// Update all urls, in case `WEBHOOK_URL` was updated by `--tunnel`
+		const instanceBaseUrl = getInstanceBaseUrl();
+		this.frontendSettings.urlBaseWebhook = WebhookHelpers.getWebhookBaseUrl();
+		this.frontendSettings.urlBaseEditor = instanceBaseUrl;
+		this.frontendSettings.oauthCallbackUrls = {
+			oauth1: `${instanceBaseUrl}/${this.restEndpoint}/oauth1-credential/callback`,
+			oauth2: `${instanceBaseUrl}/${this.restEndpoint}/oauth2-credential/callback`,
+		};
+
 		// refresh user management status
 		Object.assign(this.frontendSettings.userManagement, {
 			quota: Container.get(License).getUsersLimit(),
@@ -432,6 +451,10 @@ export class Server extends AbstractServer {
 			advancedExecutionFilters: isAdvancedExecutionFiltersEnabled(),
 			variables: isVariablesEnabled(),
 			sourceControl: isSourceControlLicensed(),
+			showNonProdBanner: Container.get(License).isFeatureEnabled(
+				LICENSE_FEATURES.SHOW_NON_PROD_BANNER,
+			),
+			debugInEditor: isDebugInEditorLicensed(),
 		});
 
 		if (isLdapEnabled()) {
@@ -455,6 +478,9 @@ export class Server extends AbstractServer {
 		if (config.get('nodes.packagesMissing').length > 0) {
 			this.frontendSettings.missingPackages = true;
 		}
+
+		this.frontendSettings.mfa.enabled = isMfaFeatureEnabled();
+
 		return this.frontendSettings;
 	}
 
@@ -463,26 +489,29 @@ export class Server extends AbstractServer {
 		const repositories = Db.collections;
 		setupAuthMiddlewares(app, ignoredEndpoints, this.restEndpoint);
 
+		const encryptionKey = await UserSettings.getEncryptionKey();
+
 		const logger = LoggerProxy;
 		const internalHooks = Container.get(InternalHooks);
 		const mailer = Container.get(UserManagementMailer);
 		const postHog = this.postHog;
+		const mfaService = new MfaService(repositories.User, new TOTPService(), encryptionKey);
 
 		const controllers: object[] = [
 			new EventBusController(),
-			new AuthController({ config, internalHooks, repositories, logger, postHog }),
-			new OwnerController({ config, internalHooks, repositories, logger }),
-			new MeController({ externalHooks, internalHooks, repositories, logger }),
+			new AuthController({ config, internalHooks, logger, postHog, mfaService }),
+			new OwnerController({ config, internalHooks, repositories, logger, postHog }),
+			new MeController({ externalHooks, internalHooks, logger }),
 			new NodeTypesController({ config, nodeTypes }),
 			new PasswordResetController({
 				config,
 				externalHooks,
 				internalHooks,
 				mailer,
-				repositories,
 				logger,
+				mfaService,
 			}),
-			new TagsController({ config, repositories, externalHooks }),
+			Container.get(TagsController),
 			new TranslationController(config, this.credentialTypes),
 			new UsersController({
 				config,
@@ -496,6 +525,7 @@ export class Server extends AbstractServer {
 			}),
 			Container.get(SamlController),
 			Container.get(SourceControlController),
+			Container.get(WorkflowStatisticsController),
 		];
 
 		if (isLdapEnabled()) {
@@ -515,11 +545,19 @@ export class Server extends AbstractServer {
 			controllers.push(Container.get(E2EController));
 		}
 
+		if (isMfaFeatureEnabled()) {
+			controllers.push(new MFAController(mfaService));
+		}
+
 		controllers.forEach((controller) => registerController(app, config, controller));
 	}
 
 	async configure(): Promise<void> {
-		configureMetrics(this.app);
+		if (config.getEnv('endpoints.metrics.enable')) {
+			// eslint-disable-next-line @typescript-eslint/naming-convention
+			const { MetricsService } = await import('@/services/metrics.service');
+			await Container.get(MetricsService).configureMetrics(this.app);
+		}
 
 		this.instanceId = await UserSettings.getInstanceId();
 
@@ -543,8 +581,6 @@ export class Server extends AbstractServer {
 			'healthz',
 			'metrics',
 			'e2e',
-			this.endpointWebhook,
-			this.endpointWebhookTest,
 			this.endpointPresetCredentials,
 			isApiEnabled() ? '' : publicApiEndpoint,
 			...excludeEndpoints.split(':'),
@@ -590,6 +626,8 @@ export class Server extends AbstractServer {
 
 		await handleLdapInit();
 
+		await handleMfaDisable();
+
 		await this.registerControllers(ignoredEndpoints);
 
 		this.app.use(`/${this.restEndpoint}/credentials`, credentialsController);
@@ -603,11 +641,6 @@ export class Server extends AbstractServer {
 		// License
 		// ----------------------------------------
 		this.app.use(`/${this.restEndpoint}/license`, licenseController);
-
-		// ----------------------------------------
-		// Workflow Statistics
-		// ----------------------------------------
-		this.app.use(`/${this.restEndpoint}/workflow-stats`, workflowStatsController);
 
 		// ----------------------------------------
 		// SAML
@@ -924,7 +957,19 @@ export class Server extends AbstractServer {
 					signature_method: signatureMethod,
 					// eslint-disable-next-line @typescript-eslint/naming-convention
 					hash_function(base, key) {
-						const algorithm = signatureMethod === 'HMAC-SHA1' ? 'sha1' : 'sha256';
+						let algorithm: string;
+						switch (signatureMethod) {
+							case 'HMAC-SHA256':
+								algorithm = 'sha256';
+								break;
+							case 'HMAC-SHA512':
+								algorithm = 'sha512';
+								break;
+							default:
+								algorithm = 'sha1';
+								break;
+						}
+
 						return createHmac(algorithm, key).update(base).digest('base64');
 					},
 				};
@@ -937,7 +982,6 @@ export class Server extends AbstractServer {
 
 				await this.externalHooks.run('oauth1.authenticate', [oAuthOptions, oauthRequestData]);
 
-				// eslint-disable-next-line new-cap
 				const oauth = new clientOAuth1(oAuthOptions);
 
 				const options: RequestOptions = {
@@ -951,15 +995,17 @@ export class Server extends AbstractServer {
 				// @ts-ignore
 				options.headers = data;
 
-				const { data: response } = await axios.request(options as Partial<AxiosRequestConfig>);
+				const response = await axios.request(options as Partial<AxiosRequestConfig>);
 
 				// Response comes as x-www-form-urlencoded string so convert it to JSON
 
-				const paramsParser = new URLSearchParams(response);
+				const paramsParser = new URLSearchParams(response.data);
 
 				const responseJson = Object.fromEntries(paramsParser.entries());
 
-				const returnUri = `${oauthCredentials.authUrl}?oauth_token=${responseJson.oauth_token}`;
+				const returnUri = `${oauthCredentials.authUrl as string}?oauth_token=${
+					responseJson.oauth_token
+				}`;
 
 				// Encrypt the data
 				const credentials = new Credentials(
@@ -1392,17 +1438,6 @@ export class Server extends AbstractServer {
 			await eventBus.initialize();
 		}
 
-		// ----------------------------------------
-		// Webhooks
-		// ----------------------------------------
-
-		if (!config.getEnv('endpoints.disableProductionWebhooksOnMainProcess')) {
-			this.setupWebhookEndpoint();
-			this.setupWaitingWebhookEndpoint();
-		}
-
-		this.setupTestWebhookEndpoint();
-
 		if (this.endpointPresetCredentials !== '') {
 			// POST endpoint to set preset credentials
 			this.app.post(
@@ -1411,7 +1446,7 @@ export class Server extends AbstractServer {
 					if (!this.presetCredentialsLoaded) {
 						const body = req.body as ICredentialsOverwrite;
 
-						if (req.headers['content-type'] !== 'application/json') {
+						if (req.contentType !== 'application/json') {
 							ResponseHelper.sendErrorResponse(
 								res,
 								new Error(

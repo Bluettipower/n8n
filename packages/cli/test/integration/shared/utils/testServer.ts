@@ -1,6 +1,5 @@
 import { Container } from 'typedi';
 import cookieParser from 'cookie-parser';
-import bodyParser from 'body-parser';
 import express from 'express';
 import { LoggerProxy } from 'n8n-workflow';
 import type superagent from 'superagent';
@@ -24,13 +23,15 @@ import { registerController } from '@/decorators';
 import {
 	AuthController,
 	LdapController,
+	MFAController,
 	MeController,
 	NodesController,
 	OwnerController,
 	PasswordResetController,
+	TagsController,
 	UsersController,
 } from '@/controllers';
-import { setupAuthMiddlewares } from '@/middlewares';
+import { rawBodyReader, bodyParser, setupAuthMiddlewares } from '@/middlewares';
 
 import { InternalHooks } from '@/InternalHooks';
 import { LoadNodesAndCredentials } from '@/LoadNodesAndCredentials';
@@ -49,6 +50,10 @@ import * as testDb from '../../shared/testDb';
 import { AUTHLESS_ENDPOINTS, PUBLIC_API_REST_PATH_SEGMENT, REST_PATH_SEGMENT } from '../constants';
 import type { EndpointGroup, SetupProps, TestServer } from '../types';
 import { mockInstance } from './mocking';
+import { MfaService } from '@/Mfa/mfa.service';
+import { TOTPService } from '@/Mfa/totp.service';
+import { UserSettings } from 'n8n-core';
+import { MetricsService } from '@/services/metrics.service';
 
 /**
  * Plugin to prefix a path segment into a request URL pathname.
@@ -91,10 +96,8 @@ function createAgent(app: express.Application, options?: { auth: boolean; user: 
 	const agent = request.agent(app);
 	void agent.use(prefix(REST_PATH_SEGMENT));
 	if (options?.auth && options?.user) {
-		try {
-			const { token } = issueJWT(options.user);
-			agent.jar.setCookie(`${AUTH_COOKIE_NAME}=${token}`);
-		} catch {}
+		const { token } = issueJWT(options.user);
+		agent.jar.setCookie(`${AUTH_COOKIE_NAME}=${token}`);
 	}
 	return agent;
 }
@@ -117,6 +120,9 @@ export const setupTestServer = ({
 	enabledFeatures,
 }: SetupProps): TestServer => {
 	const app = express();
+	app.use(rawBodyReader);
+	app.use(cookieParser());
+
 	const testServer: TestServer = {
 		app,
 		httpServer: app.listen(0),
@@ -135,10 +141,6 @@ export const setupTestServer = ({
 		mockInstance(InternalHooks);
 		mockInstance(PostHogClient);
 
-		app.use(bodyParser.json());
-		app.use(bodyParser.urlencoded({ extended: true }));
-		app.use(cookieParser());
-
 		config.set('userManagement.jwtSecret', 'My JWT secret');
 		config.set('userManagement.isInstanceOwnerSetUp', true);
 
@@ -152,6 +154,8 @@ export const setupTestServer = ({
 		}
 
 		if (!endpointGroups) return;
+
+		app.use(bodyParser);
 
 		const [routerEndpoints, functionEndpoints] = classifyEndpointGroups(endpointGroups);
 
@@ -178,13 +182,18 @@ export const setupTestServer = ({
 		}
 
 		if (functionEndpoints.length) {
+			const encryptionKey = await UserSettings.getEncryptionKey();
+			const repositories = Db.collections;
 			const externalHooks = Container.get(ExternalHooks);
 			const internalHooks = Container.get(InternalHooks);
 			const mailer = Container.get(UserManagementMailer);
-			const repositories = Db.collections;
+			const mfaService = new MfaService(repositories.User, new TOTPService(), encryptionKey);
 
 			for (const group of functionEndpoints) {
 				switch (group) {
+					case 'metrics':
+						await Container.get(MetricsService).configureMetrics(app);
+						break;
 					case 'eventBus':
 						registerController(app, config, new EventBusController());
 						break;
@@ -192,9 +201,11 @@ export const setupTestServer = ({
 						registerController(
 							app,
 							config,
-							new AuthController({ config, logger, internalHooks, repositories }),
+							new AuthController({ config, logger, internalHooks, repositories, mfaService }),
 						);
 						break;
+					case 'mfa':
+						registerController(app, config, new MFAController(mfaService));
 					case 'ldap':
 						Container.get(License).isLdapEnabled = () => true;
 						await handleLdapInit();
@@ -223,7 +234,11 @@ export const setupTestServer = ({
 						registerController(
 							app,
 							config,
-							new MeController({ logger, externalHooks, internalHooks, repositories }),
+							new MeController({
+								logger,
+								externalHooks,
+								internalHooks,
+							}),
 						);
 						break;
 					case 'passwordReset':
@@ -236,7 +251,7 @@ export const setupTestServer = ({
 								externalHooks,
 								internalHooks,
 								mailer,
-								repositories,
+								mfaService,
 							}),
 						);
 						break;
@@ -244,7 +259,12 @@ export const setupTestServer = ({
 						registerController(
 							app,
 							config,
-							new OwnerController({ config, logger, internalHooks, repositories }),
+							new OwnerController({
+								config,
+								logger,
+								internalHooks,
+								repositories,
+							}),
 						);
 						break;
 					case 'users':
@@ -261,6 +281,10 @@ export const setupTestServer = ({
 								logger,
 							}),
 						);
+						break;
+					case 'tags':
+						registerController(app, config, Container.get(TagsController));
+						break;
 				}
 			}
 		}
