@@ -1,8 +1,9 @@
 import { MainSidebar } from './../pages/sidebar/main-sidebar';
-import { INSTANCE_OWNER, BACKEND_BASE_URL } from '../constants';
+import { INSTANCE_OWNER, INSTANCE_ADMIN, BACKEND_BASE_URL } from '../constants';
 import { SigninPage } from '../pages';
 import { PersonalSettingsPage } from '../pages/settings-personal';
 import { MfaLoginPage } from '../pages/mfa-login';
+import generateOTPToken from 'cypress-otp';
 
 const MFA_SECRET = 'KVKFKRCPNZQUYMLXOVYDSQKJKZDTSRLD';
 
@@ -13,6 +14,16 @@ const user = {
 	password: INSTANCE_OWNER.password,
 	firstName: 'User',
 	lastName: 'A',
+	mfaEnabled: false,
+	mfaSecret: MFA_SECRET,
+	mfaRecoveryCodes: [RECOVERY_CODE],
+};
+
+const admin = {
+	email: INSTANCE_ADMIN.email,
+	password: INSTANCE_ADMIN.password,
+	firstName: 'Admin',
+	lastName: 'B',
 	mfaEnabled: false,
 	mfaSecret: MFA_SECRET,
 	mfaRecoveryCodes: [RECOVERY_CODE],
@@ -29,11 +40,13 @@ describe('Two-factor authentication', () => {
 		cy.request('POST', `${BACKEND_BASE_URL}/rest/e2e/reset`, {
 			owner: user,
 			members: [],
+			admin,
 		});
 		cy.on('uncaught:exception', (err, runnable) => {
 			expect(err.message).to.include('Not logged in');
 			return false;
 		});
+		cy.intercept('GET', '/rest/mfa/qr').as('getMfaQrCode');
 	});
 
 	it('Should be able to login with MFA token', () => {
@@ -41,10 +54,9 @@ describe('Two-factor authentication', () => {
 		signinPage.actions.loginWithEmailAndPassword(email, password);
 		personalSettingsPage.actions.enableMfa();
 		mainSidebar.actions.signout();
-		cy.generateToken(user.mfaSecret).then((token) => {
-			mfaLoginPage.actions.loginWithMfaToken(email, password, token);
-			mainSidebar.actions.signout();
-		});
+		const token = generateOTPToken(user.mfaSecret);
+		mfaLoginPage.actions.loginWithMfaToken(email, password, token);
+		mainSidebar.actions.signout();
 	});
 
 	it('Should be able to login with recovery code', () => {
@@ -61,10 +73,9 @@ describe('Two-factor authentication', () => {
 		signinPage.actions.loginWithEmailAndPassword(email, password);
 		personalSettingsPage.actions.enableMfa();
 		mainSidebar.actions.signout();
-		cy.generateToken(user.mfaSecret).then((token) => {
-			mfaLoginPage.actions.loginWithMfaToken(email, password, token);
-			personalSettingsPage.actions.disableMfa();
-			mainSidebar.actions.signout();
-		});
+		const token = generateOTPToken(user.mfaSecret);
+		mfaLoginPage.actions.loginWithMfaToken(email, password, token);
+		personalSettingsPage.actions.disableMfa();
+		mainSidebar.actions.signout();
 	});
 });
