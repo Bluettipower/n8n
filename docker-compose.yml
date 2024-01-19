@@ -1,0 +1,57 @@
+version: '2'
+
+services:
+  postgres:
+    image: postgres:11
+    container_name: n8n-postgres
+    restart: always
+    ports:
+      - 5432:5432
+    environment:
+      #- PGDATA=/tmp
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=linux
+      - POSTGRES_DB=postgres
+    user: root
+    volumes:
+      - /data/n8n/postgresql:/var/lib/postgresql/data
+      #- /hdd/data/n8n_data/postgresql:/var/lib/postgresql/data
+      - ./docker/compose/withPostgres/init-data.sh:/docker-entrypoint-initdb.d/init-data.sh
+    networks:
+      - traefik
+
+  n8n:
+    image: n8n_bluetti:v0.5
+    container_name: n8n05
+    restart: always
+    ports:
+      - 5678:5678
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=n8n-postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=postgres
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=linux
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=root
+      - N8N_BASIC_AUTH_PASSWORD=linux
+      - N8N_HOST=n8n.bluettipower.com
+      - N8N_PROTOCOL=https
+      - NODE_ENV=production
+      - WEBHOOK_URL=https://n8n.bluettipower.com
+    labels:
+      - traefik.http.routers.n8n.rule=Host(`n8n.bluettipower.com`)
+    # links:
+    #  - postgres
+    volumes:
+      - /data/n8n/n8n:/home/node/.n8n
+      #- /hdd/bluetti/n8n/n8n_data/n8n:/home/node/.n8n
+  # depends_on:
+    # - postgres
+    networks:
+      - traefik
+
+networks:
+  traefik:
+    external: true
